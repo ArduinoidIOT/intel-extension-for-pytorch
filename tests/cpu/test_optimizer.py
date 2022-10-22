@@ -102,6 +102,18 @@ class TestOptimizers(TestCase):
                 M.parameters(), lr=0.001, betas=betas, eps=eps, weight_decay=weight_decay,
                 amsgrad=amsgrad, foreach=foreach, maximize=maximize)
             self._test_update(M, adam, dtype, split_master_weight_for_bf16, set_to_none, fused)
+    
+    def test_adamw(self):
+        M = TestModule()
+        options = itertools.product([True, False], [True, False], [True, False], [torch.float, torch.bfloat16], [(0.1, 0.111), (0.9, 0.999)], [1e-8], [0, 0.1], [True, False], [True, False], [True, False])
+        for set_to_none, split_master_weight_for_bf16, amsgrad, dtype, betas, eps, weight_decay, foreach, maximize, fused in options:
+            if foreach:
+                # there is a bug for foreach option in stock PT： https://github.com/pytorch/pytorch/issues/78807
+                continue
+            adamw = torch.optim.AdamW(
+                M.parameters(), lr=0.001, betas=betas, eps=eps, weight_decay=weight_decay,
+                amsgrad=amsgrad, foreach=foreach, maximize=maximize)
+            self._test_update(M, adamw, dtype, split_master_weight_for_bf16, set_to_none, fused)
 
 class TestFusedSteps(TestCase):
 
@@ -198,6 +210,108 @@ class TestFusedSteps(TestCase):
     def test_adam_step(self):
         fused = torch.ops.torch_ipex.adam_fused_step
         non_fused = bench.custom_op_bench.optimizer.non_fused_adam
+
+        # fused fp32 args
+        param = torch.randn(31, 33)
+        grad = torch.randn(31, 33)
+        exp_avg = torch.randn(31, 33).abs()
+        exp_avg_sq = torch.randn(31, 33).abs()
+        max_exp_avg_sq = torch.randn(31, 33).abs()
+        trail = torch.Tensor()
+
+        # fused bf16 params (master weight split)
+        param2, trail2 = torch.ops.torch_ipex.split_float_bfloat16(param)
+        grad2 = grad.bfloat16()
+        exp_avg2 = exp_avg.clone()
+        exp_avg_sq2 = exp_avg_sq.clone()
+        max_exp_avg_sq2 = max_exp_avg_sq.clone()
+
+        # fused bf16 params (master weight)
+        param3 = param.clone()
+        grad3 = grad.bfloat16()
+        exp_avg3 = exp_avg.clone()
+        exp_avg_sq3 = exp_avg_sq.clone()
+        max_exp_avg_sq3 = max_exp_avg_sq.clone()
+        bf16_param = param3.bfloat16()
+
+        # non-fused fp32 params
+        param4 = param.clone()
+        grad4 = grad.clone()
+        exp_avg4 = exp_avg.clone()
+        exp_avg_sq4 = exp_avg_sq.clone()
+        max_exp_avg_sq4 = max_exp_avg_sq.clone()
+
+        # fused and non-contiguous fp32 args
+        param5 = param.clone().t().contiguous().t()
+        grad5 = grad.clone().t().contiguous().t()
+        exp_avg5 = exp_avg.clone().t().contiguous().t()
+        exp_avg_sq5 = exp_avg_sq.clone().t().contiguous().t()
+        max_exp_avg_sq5 = max_exp_avg_sq.clone().t().contiguous().t()
+
+        step = 10
+        beta1 = 0.8
+        beta2 = 0.9
+        learning_rate = 0.1
+        weight_decay = 0.3
+        eps = 0.001
+        amsgrad = True
+        fused(param, exp_avg, exp_avg_sq, max_exp_avg_sq, grad, trail, amsgrad, step, beta1, beta2, learning_rate, weight_decay, eps)
+        fused(param2, exp_avg2, exp_avg_sq2, max_exp_avg_sq2, grad2, trail2, amsgrad, step, beta1, beta2, learning_rate, weight_decay, eps)
+        fused(param3, exp_avg3, exp_avg_sq3, max_exp_avg_sq3, grad3, bf16_param, amsgrad, step, beta1, beta2, learning_rate, weight_decay, eps)
+        non_fused(param4, exp_avg4, exp_avg_sq4, max_exp_avg_sq4, grad4, amsgrad, step, beta1, beta2, learning_rate, weight_decay, eps)
+        fused(param5, exp_avg5, exp_avg_sq5, max_exp_avg_sq5, grad5, trail, amsgrad, step, beta1, beta2, learning_rate, weight_decay, eps)
+
+        # compare fused and non-fused
+        self.assertEqual(param, param4)
+        self.assertEqual(exp_avg, exp_avg4)
+        self.assertEqual(exp_avg_sq, exp_avg_sq4)
+        self.assertEqual(max_exp_avg_sq, max_exp_avg_sq4)
+        # compare fused fp32 and fused bf16
+        self.assertEqual(param, param2.float(), rtol=1e-4, atol=1e-1)
+        self.assertEqual(exp_avg, exp_avg2.float(), rtol=1e-4, atol=1e-1)
+        self.assertEqual(exp_avg_sq, exp_avg_sq2.float(), rtol=1e-4, atol=1e-1)
+        self.assertEqual(max_exp_avg_sq, max_exp_avg_sq2.float(), rtol=1e-4, atol=1e-1)
+        # compare split vs non-split
+        self.assertEqual(param3, param2.float(), rtol=1e-4, atol=1e-1)
+        self.assertEqual(exp_avg3, exp_avg2.float(), rtol=1e-4, atol=1e-1)
+        self.assertEqual(exp_avg_sq3, exp_avg_sq2.float(), rtol=1e-4, atol=1e-1)
+        self.assertEqual(max_exp_avg_sq3, max_exp_avg_sq2.float(), rtol=1e-4, atol=1e-1)
+        # make sure bf16_param are updated
+        self.assertEqual(bf16_param, param3.bfloat16())
+
+        # compare fused contiguous and fused non-contiguous()
+        self.assertEqual(param, param5)
+        self.assertEqual(exp_avg, exp_avg5)
+        self.assertEqual(exp_avg_sq, exp_avg_sq5)
+        self.assertEqual(max_exp_avg_sq, max_exp_avg_sq5)
+
+        # fused double args
+        param = torch.randn(31, 33).double()
+        grad = torch.randn(31, 33).double()
+        exp_avg = torch.randn(31, 33).double().abs()
+        exp_avg_sq = torch.randn(31, 33).double().abs()
+        max_exp_avg_sq = torch.randn(31, 33).double().abs()
+        trail = torch.Tensor()
+
+        # non-fused double params
+        param2 = param.clone()
+        grad2 = grad.clone()
+        exp_avg2 = exp_avg.clone()
+        exp_avg_sq2 = exp_avg_sq.clone()
+        max_exp_avg_sq2 = max_exp_avg_sq.clone()
+
+        fused(param, exp_avg, exp_avg_sq, max_exp_avg_sq, grad, trail, amsgrad, step, beta1, beta2, learning_rate, weight_decay, eps)
+        non_fused(param2, exp_avg2, exp_avg_sq2, max_exp_avg_sq2, grad2, amsgrad, step, beta1, beta2, learning_rate, weight_decay, eps)
+
+        # compare fused and non-fused for double
+        self.assertEqual(param, param2)
+        self.assertEqual(exp_avg, exp_avg2)
+        self.assertEqual(exp_avg_sq, exp_avg_sq2)
+        self.assertEqual(max_exp_avg_sq, max_exp_avg_sq2)
+
+    def test_adamw_step(self):
+        fused = torch.ops.torch_ipex.adamw_fused_step
+        non_fused = bench.custom_op_bench.optimizer.non_fused_adamw
 
         # fused fp32 args
         param = torch.randn(31, 33)

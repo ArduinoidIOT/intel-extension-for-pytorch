@@ -65,6 +65,22 @@ void adam_fused_step_kernel_impl(
 
 } // namespace
 
+void adamw_fused_step_kernel_impl(
+    const at::Tensor& param_,
+    const at::Tensor& exp_avg_,
+    const at::Tensor& exp_avg_sq_,
+    const at::Tensor& max_exp_avg_sq_,
+    const at::Tensor& grad_,
+    const at::Tensor& param2_,
+    bool amsgrad,
+    double step,
+    double beta1,
+    double beta2,
+    double learning_rate,
+    double weight_decay,
+    double eps);
+
+} // namespace
 using adagrad_fused_step_kernel_fn = std::tuple<at::Tensor, at::Tensor> (*)(
     const at::Tensor&,
     const at::Tensor&,
@@ -124,5 +140,20 @@ using adam_fused_step_kernel_fn = void (*)(
     double);
 DECLARE_DISPATCH(adam_fused_step_kernel_fn, adam_fused_step_kernel_stub);
 
+using adamw_fused_step_kernel_fn = void (*)(
+    const at::Tensor&,
+    const at::Tensor&,
+    const at::Tensor&,
+    const at::Tensor&,
+    const at::Tensor&,
+    const at::Tensor&,
+    bool,
+    double,
+    double,
+    double,
+    double,
+    double,
+    double);
+DECLARE_DISPATCH(adamw_fused_step_kernel_fn, adamw_fused_step_kernel_stub);
 } // namespace cpu
 } // namespace torch_ipex

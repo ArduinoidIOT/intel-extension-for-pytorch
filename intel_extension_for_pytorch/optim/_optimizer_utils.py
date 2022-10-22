@@ -2,7 +2,7 @@ import torch
 import copy
 import types
 import warnings
-from ._functional import sgd_step, adagrad_step, lamb_step, adam_step
+from ._functional import sgd_step, adagrad_step, lamb_step, adam_step, adamw_step
 from ._lamb import Lamb
 from ..nn import utils
 
@@ -10,6 +10,7 @@ IPEX_FUSED_OPTIMIZER_LIST = [
     torch.optim.SGD,
     torch.optim.Adagrad,
     torch.optim.Adam,
+    torch.optim.AdamW,
     Lamb,
 ]
 
@@ -17,6 +18,7 @@ OPTIMIZER_FUSED_STEP_MAPPING = {
     torch.optim.SGD: sgd_step,
     torch.optim.Adagrad: adagrad_step,
     torch.optim.Adam: adam_step,
+    torch.optim.AdamW: adamw_step,
     Lamb: lamb_step
 }
 

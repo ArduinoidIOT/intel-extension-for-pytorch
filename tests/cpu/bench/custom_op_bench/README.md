@@ -32,6 +32,7 @@ python -m intel_extension_for_pytorch.cpu.launch --node_id 0 optimizer.py --opti
 python -m intel_extension_for_pytorch.cpu.launch --node_id 0 optimizer.py --optimizer lamb # for lamb
 python -m intel_extension_for_pytorch.cpu.launch --node_id 0 optimizer.py --optimizer adagrad # for adagrad
 python -m intel_extension_for_pytorch.cpu.launch --node_id 0 optimizer.py --optimizer adam # for adam
+python -m intel_extension_for_pytorch.cpu.launch --node_id 0 optimizer.py --optimizer adamw # for adamw
 ```
 
 ## Evaluate IPEX [MergedEmbeddingBag](../../../../intel_extension_for_pytorch/nn/module/merged_embeddingbag.py)
